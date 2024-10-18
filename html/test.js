@@ -19,6 +19,8 @@ function googleLink(ctx) {
     "Hello!",
     "Bye!",
     ["a", {href: "http://www.google.com"}, ["Link to google!"]],
-    ["button", {on: {click}}, [`Click Me!: ${ctx.state}`]]
+    "no",
+    ["button", {on: {click}}, [`Click Me!: ${ctx.state}`]],
+    ["span", ["yipe"]],
   ]]
 }

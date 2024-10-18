@@ -27,17 +27,38 @@ export type NodeEventListener = () => void
 export type NodeSrcChildren = Array<NodeSrc>
 
 class Rendering {
-  root: RenderedNode<any>
+  root!: RenderedNode<any>
 
-  constructor(root: RenderedNode<any>) {
-    this.root = root
+  nodesToUpdate: Array<RenderedNode<any>> | null = null
+
+  constructor() {}
+
+  addNodeToUpdate(node: RenderedNode<any>) {
+    if (this.nodesToUpdate == null) {
+      this.nodesToUpdate = [node]
+      window.requestAnimationFrame(() => this.updateNodes())
+    } else {
+      this.nodesToUpdate.push(node)
+    }
+  }
+
+  updateNodes() {
+    const nodesToUpdate = this.nodesToUpdate
+    if (nodesToUpdate != null) {
+      this.nodesToUpdate = null
+      for (const node of nodesToUpdate) {
+        node.renderRequested = false
+        node.runRenderFunction()
+      }
+    }
   }
 }
 
 export function renderInto(node: Node, nodeSrc: NodeSrc): Rendering {
-  const root = new RenderedNode(node)
-  const rendering = new Rendering(root)
-  renderNode(root, nodeSrc)
+  const rendering = new Rendering()
+  const root = new RenderedNode(rendering, node)
+  rendering.root = root
+  renderNode(rendering, root, nodeSrc)
   return rendering
 }
 
@@ -47,7 +68,7 @@ export type RenderingFunc<S> = (
 
 export interface RenderingContext<S> {
   state: S
-  initializeState(state: S | (() => S)): void
+  initializeState(state: S | (() => S)): boolean
   update(): void
 }
 
@@ -66,7 +87,12 @@ class RenderedNode<S> implements RenderingContext<S> {
   _state!: S
   _stateInitialized = false
 
-  constructor(public parent: Node) {}
+  renderRequested = false
+
+  constructor(
+    public rendering: Rendering,
+    public parent: Node
+  ) {}
 
   setNode(node: Node | null) {
     if (this.node != null) {
@@ -97,7 +123,7 @@ class RenderedNode<S> implements RenderingContext<S> {
     this._stateInitialized = true
   }
 
-  initializeState(state: S | (() => S)) {
+  initializeState(state: S | (() => S)): boolean {
     if (!this._stateInitialized) {
       if (typeof state === "function") {
         const sfunc: Function = state
@@ -105,6 +131,9 @@ class RenderedNode<S> implements RenderingContext<S> {
       } else {
         this.state = state
       }
+      return true
+    } else {
+      return false
     }
   }
 
@@ -139,7 +168,7 @@ class RenderedNode<S> implements RenderingContext<S> {
     if (func != null) {
       this.clear()
       const newNodeSrc = func(this)
-      renderNode(this, newNodeSrc)
+      renderNode(this.rendering, this, newNodeSrc)
     }
   }
 
@@ -180,12 +209,18 @@ class RenderedNode<S> implements RenderingContext<S> {
   }
 
   update() {
-    // FIXME - delay this until the next tick by registering with the Rendering
-    this.runRenderFunction()
+    if (!this.renderRequested) {
+      this.renderRequested = true
+      this.rendering.addNodeToUpdate(this)
+    }
   }
 }
 
-function renderNode(renderedNode: RenderedNode<any>, nodeSrc: NodeSrc) {
+function renderNode(
+  rendering: Rendering,
+  renderedNode: RenderedNode<any>,
+  nodeSrc: NodeSrc
+) {
   switch (typeof nodeSrc) {
     case "undefined":
       renderedNode.setNode(null)
@@ -228,9 +263,9 @@ function renderNode(renderedNode: RenderedNode<any>, nodeSrc: NodeSrc) {
         }
         if (children != null) {
           for (const childSrc of children) {
-            const childRenderedNode = new RenderedNode(node)
+            const childRenderedNode = new RenderedNode(rendering, node)
             renderedNode.appendChild(childRenderedNode)
-            renderNode(childRenderedNode, childSrc)
+            renderNode(rendering, childRenderedNode, childSrc)
           }
         }
         renderedNode.setNode(node)
